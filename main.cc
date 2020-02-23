@@ -8,6 +8,7 @@
 #include <string>
 
 #include <fcntl.h>
+#include <getopt.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -15,9 +16,14 @@
 
 using namespace std;
 
+static bool option_verbose;
+static bool option_ignore_fail;
+
 void write_tmp_file(ofstream &tmp_out, string filename) {
     if (filename == "-") {
-        cerr << "hereed: reading from stdin..." << endl;
+        if (option_verbose) {
+            cerr << "hereed: reading from stdin..." << endl;
+        }
 
         char buf[4096];
         do {
@@ -29,9 +35,11 @@ void write_tmp_file(ofstream &tmp_out, string filename) {
     } else {
         ifstream in(filename);
         if (!in) {
-            int err = errno;
-            cerr << "Warning: failed to open " << filename << ":"
-                 << strerror(err) << endl;
+            if (option_verbose) {
+                int err = errno;
+                cerr << "Warning: failed to open " << filename << ":"
+                     << strerror(err) << endl;
+            }
 
             return;
         }
@@ -57,17 +65,69 @@ string find_editor() {
     }
 
     default_editor = getenv("SELECTED_EDITOR");
-    if (default_editor != nullptr){
+    if (default_editor != nullptr) {
         return default_editor;
     }
 
-    cerr << "Warning: Unable to detect default editor" << endl;
+    if (option_verbose) {
+        cerr << "Warning: Unable to detect default editor" << endl;
+    }
 
     return "nano";
 }
 
+static option options[] = {{"help", no_argument, 0, 'h'},
+                           {"version", no_argument, 0, 'V'},
+                           {"ignore-fail", no_argument, 0, 's'},
+                           {"verbose", no_argument, 0, 'v'},
+                           {0, 0, 0, 0}};
+
+static void print_version() { cout << "hereed 1.0" << endl; }
+
+static void print_help() {
+    cout << "usage: hereed [OPTION]... [--] [FILE]..." << endl;
+    cout << "if FILE is `-', this reads from stdin." << endl << endl;
+    cout << "options:" << endl;
+    cout << " -s, --ignore-fail success even if editor exited with fail"
+         << endl;
+    cout << " -v, --verbose     print verbose output" << endl;
+    cout << "     --help        print this help and exit" << endl;
+    cout << "     --version     print version and exit" << endl << endl;
+    ;
+    cout << "source code repository: https://github.com/kofuk/hereed" << endl;
+}
+
 int main(int argc, char **argv) {
     string editor = find_editor();
+
+    int opt_char;
+    for (;;) {
+        opt_char = getopt_long(argc, argv, "vs", options, nullptr);
+
+        if (opt_char == -1) break;
+
+        switch (opt_char) {
+        case 'h':
+            print_help();
+            return 0;
+
+        case 's':
+            option_ignore_fail = true;
+            break;
+
+        case 'v':
+            option_verbose = true;
+            break;
+
+        case 'V':
+            print_version();
+            return 0;
+
+        default:
+            print_help();
+            return 1;
+        }
+    }
 
     filesystem::path tmp_base = "/tmp";
     filesystem::path tmp;
@@ -79,7 +139,7 @@ int main(int argc, char **argv) {
     {
         ofstream tmp_out(tmp.string());
 
-        for (argv++; *argv; ++argv) {
+        for (argv += optind; *argv; ++argv) {
             write_tmp_file(tmp_out, *argv);
         }
     }
@@ -99,15 +159,19 @@ int main(int argc, char **argv) {
         }
     }
 
-    cerr << "Waiting for your editor to finish" << endl;
+    if (option_verbose) {
+        cerr << "Waiting for your editor to finish" << endl;
+    }
 
     int status;
     waitpid(pid, &status, 0);
 
-    if (status != 0) {
-        cerr << "Editor process exited with " + to_string(status) +
-                    "; exiting hereed with failure."
-             << endl;
+    if (option_ignore_fail && status != 0) {
+        if (option_verbose) {
+            cerr << "Editor process exited with " + to_string(status) +
+                        "; exiting hereed with failure."
+                 << endl;
+        }
 
         filesystem::remove(tmp);
 

@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -13,6 +14,36 @@
 #include <unistd.h>
 
 using namespace std;
+
+void write_tmp_file(ofstream &tmp_out, string filename) {
+    if (filename == "-") {
+        cerr << "hereed: reading from stdin..." << endl;
+
+        char buf[4096];
+        do {
+            cin.read(buf, 4096);
+            tmp_out.write(buf, cin.gcount());
+        } while (!cin.eof() && !cin.bad());
+
+        cin.clear();
+    } else {
+        ifstream in(filename);
+        if (!in) {
+            int err = errno;
+            cerr << "Warning: failed to open " << filename << ":"
+                 << strerror(err) << endl;
+
+            return;
+        }
+
+        char buf[4096];
+        do {
+            in.read(buf, 4096);
+
+            tmp_out.write(buf, in.gcount());
+        } while (!in.eof() && !in.fail());
+    }
+}
 
 int main(int argc, char **argv) {
     char *editor = getenv("EDITOR");
@@ -32,27 +63,11 @@ int main(int argc, char **argv) {
 
     } while (filesystem::exists(tmp));
 
-    if (argc > 1 && !strcmp(argv[1], "-")) {
-        cerr << "hereed: reading from stdin..." << endl;
+    {
+        ofstream tmp_out(tmp.string());
 
-        ofstream strm(tmp);
-        char buf[4096];
-        do {
-            cin.read(buf, 4096);
-            strm.write(buf, cin.gcount());
-        } while (!cin.eof() && !cin.bad());
-    } else {
-        int fd = creat(tmp.c_str(), S_IRUSR | S_IWUSR);
-        if (fd == -1) {
-            perror("hereed: creat()");
-
-            return 1;
-        }
-
-        if (close(fd) == -1) {
-            perror("hereed: close()");
-
-            return 1;
+        for (argv++; *argv; ++argv) {
+            write_tmp_file(tmp_out, *argv);
         }
     }
 

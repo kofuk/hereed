@@ -45,19 +45,32 @@ void write_tmp_file(ofstream &tmp_out, string filename) {
     }
 }
 
-int main(int argc, char **argv) {
-    char *editor = getenv("EDITOR");
-
-    if (editor == nullptr) {
-        cerr << "EDITOR environment variable is not set" << endl;
-
-        return 1;
+string find_editor() {
+    char *default_editor = getenv("EDITOR");
+    if (default_editor != nullptr) {
+        return default_editor;
     }
 
+    default_editor = getenv("VISUAL");
+    if (default_editor != nullptr) {
+        return default_editor;
+    }
+
+    default_editor = getenv("SELECTED_EDITOR");
+    if (default_editor != nullptr){
+        return default_editor;
+    }
+
+    cerr << "Warning: Unable to detect default editor" << endl;
+
+    return "nano";
+}
+
+int main(int argc, char **argv) {
+    string editor = find_editor();
+
     filesystem::path tmp_base = "/tmp";
-
     filesystem::path tmp;
-
     do {
         tmp = tmp_base / ("hereed_" + to_string(rand()));
 
@@ -79,12 +92,14 @@ int main(int argc, char **argv) {
 
         return 1;
     } else if (pid == 0) {
-        if (execlp(editor, editor, tmp.c_str(), 0) == -1) {
+        if (execlp(editor.c_str(), editor.c_str(), tmp.c_str(), 0) == -1) {
             perror("hereed: execlp()");
 
             return 1;
         }
     }
+
+    cerr << "Waiting for your editor to finish" << endl;
 
     int status;
     waitpid(pid, &status, 0);
